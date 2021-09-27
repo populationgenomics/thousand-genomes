@@ -86,9 +86,10 @@ default_entry = {
     'r_chimera': None,
     'r_duplication': None,
     'median_insert_size': None,
-    'fam_id': '0',
-    'mat_id': '0',
-    'sex': '0',
+    'fam_id': 0,
+    'mat_id': 0,
+    'pat_id': 0,
+    'sex': 0,
 }
 
 
