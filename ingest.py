@@ -233,6 +233,7 @@ class TGParser(GenericParser):
                 sids_to_copy = list(sids_to_copy)[:samples_n]
         else:
             sids_to_copy = df.s
+            sids_to_copy = list(sids_to_copy)[:samples_n]
             print(f'Copying {samples_n} samples from {len(sids_to_copy)} samples')
         
         df_gvcf_copied = df.loc[df.s.isin(found_gvcf_by_sid)]
