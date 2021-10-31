@@ -1,0 +1,6 @@
+s	external_id	continental_pop	subpop	gvcf	batch	r_contamination	r_chimera	r_duplication	median_insert_size	flowcell_lane	library_id	platform	centre	operation	project	cram	crai	realign_cram	realign_crai
+NA12878-from-broad-gvcf	NA12878-from-broad-gvcf	-	-	gs://cpg-thousand-genomes-test/gvcf/NA12878.g.vcf.gz	-	NA	NA	NA	NA	-	-	-	-	add	thousand-genomes	-	-	-	-
+NA12878-realign	NA12878-realign	-	-	-	-	NA	NA	NA	NA	-	-	-	-	add	thousand-genomes	-	-	gs://cpg-reference/validation/giab/cram/NA12878.cram	gs://cpg-thousand-genomes-test/cram/NA12878.cram.crai
+NA12878-from-cram	NA12878-from-cram	-	-	-	-	NA	NA	NA	NA	-	-	-	-	add	thousand-genomes	gs://cpg-reference/validation/giab/cram/NA12878-from-cram.cram	gs://cpg-thousand-genomes-test/cram/NA12878-from-cram.cram.crai	-	-
+NA12878-hc-from-bam	NA12878-hc-from-bam	-	-	-	-	NA	NA	NA	NA	-	-	-	-	add	thousand-genomes	gs://cpg-thousand-genomes-test/cram/NA12878-hc-from-bam.bam	gs://cpg-thousand-genomes-test/cram/NA12878-hc-from-bam.bam.bai	-	-
+NA12878-hc-realign-from-bam	NA12878-hc-realign-from-bam	-	-	-	-	NA	NA	NA	NA	-	-	-	-	add	thousand-genomes	-	-	gs://cpg-thousand-genomes-test/cram/NA12878-hc-from-bam.bam	gs://cpg-thousand-genomes-test/cram/NA12878-hc-from-bam.bam.bai

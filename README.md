@@ -1,19 +1,40 @@
 # Reprocssing the 1000 Genomes
 
-Options:
-- Take Broad CRAMs and re-call variants. Can't do because the CRAM format is incompatible with the new GATK (["CRAM version 2.0 is not supported"](https://batch.hail.populationgenomics.org.au/batches/5434/jobs/109))
-- Take Broad BAMs and re-call variants. Can't do because [BAMs are GRCh37](https://batch.hail.populationgenomics.org.au/batches/5546/jobs/2).
-- Take Broad GVCFs. Works well.
-- Take Broad CRAMs and realign. Works as well, but expensive.
+## Ingesting and populating sample-metadata
 
-We evaluated all options with the following run:
+The following command populates the project and copies CRAMs to Australian buckets.
 
 ```bash
-# Copy the input for a 
-gsutil cp pipeline_input/concordance-test.tsv gs://cpg-thousand-genomes-test-tmp/joint-calling/1kg_concordance_test/samples.tsv
+python ingest.py \
+--namespace main \
+--project thousand-genomes \
+--use-batch \
+--transfer-cram
+```
 
-# Change to the joint-calling repository
-cd ../joint-calling
+It will put the CRAMs along with indices and md5 into `gs://cpg-thousand-genomes-main-upload/cram` and create corresponding `sample` and `sequence` DB entries using `sample_metadata.parser`.
+
+You can populate into `fewgenomes` instead with `--project fewgenomes` or transfer GVCFs as well with `--transfer-gvcf`, or copy only a subset of samples with e.g. `-n 100`.
+
+## Reprocessing
+
+### Reprocessing source
+
+We explored the following options for reprocessig the callset:
+
+- Take [Broad CRAMs](gs://fc-56ac46ea-efc4-4683-b6d5-6d95bed41c5e) and re-call variants. Can't do because the CRAM format is incompatible with the new GATK (["CRAM version 2.0 is not supported"](https://batch.hail.populationgenomics.org.au/batches/5434/jobs/109)).
+- Take Broad BAMs and re-call variants. Can't do because [BAMs are GRCh37](https://batch.hail.populationgenomics.org.au/batches/5546/jobs/2).
+- Take Broad GVCFs. Works well, but we better control for the varaint caller version for functional equivalency.
+- Take Broad CRAMs and realign. Works as well, but expensive. Also, the only option if decide to use DRAGMAP instead of bwa-mem.
+
+We gave all options a test run on NA12878:
+
+```bash
+git clone https://github.com/populationgenomics/joint-calling.git
+cd joint-calling
+# Copy a pre-prepared list of samples for this validation (otherwise the pipeline will attempt to pull all samples from `test`
+cp benchmark/validate-sample-list.tsv gs://cpg-thousand-genomes-test-tmp/joint-calling/1kg_concordance_test/samples.tsv
+# Submit the workflow that would align and call variants
 python batch_workflow.py \
 --scatter-count 20 \
 --namespace test \
@@ -22,33 +43,11 @@ python batch_workflow.py \
 --output-version 1kg_concordance_test
 ```
 
-Taking available GVCFs as inputs for full reprocessing.
+This notebooks calculates validation statistics `gs://cpg-fewgenomes-test-analysis/notebooks/na12878-comp.ipynb` and shows that all runs give accuracy very close to the truth set.
 
-The following command generates `pipeline_input/samples.tsv` and copies GVCFs to Australian buckets.
+## Workflow
 
-```bash
-snakemake -s ingest.smk -j2 copy
-```
-
-The bucket location the GVCFs are copied are the following:
-
-```bash
-gs://cpg-thousand-genomes-test/gvcf/raw
-gs://cpg-thousand-genomes-main/gvcf/raw
-```
-
-With the analysis runner:
-
-```bash
-analysis-runner \
---dataset thousand-genomes \
---access-level test \
---output-dir "pull-gvcfs" \
---description "Pull GVCFs" \
-python -m snakemake -s ingest.smk -j2 copy
-```
-
-To run joint-calling:
+We use the [joint-calling](https://github.com/populationgenomics/joint-calling.git) workflow to re-align and re-call variants, and do the joint-calling analysis and QC in Hail:
 
 ```bash
 cd ../joint-calling
