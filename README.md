@@ -5,6 +5,7 @@
 The following command populates the project and copies CRAMs to Australian buckets.
 
 ```bash
+cd ingest
 python ingest.py \
 --namespace main \
 --project thousand-genomes \
