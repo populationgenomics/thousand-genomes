@@ -2,18 +2,17 @@
 """
 Script to transfer 1kg data and populate the thousand-genomes project
 """
-import os
 import subprocess
 from os.path import basename, join, exists, dirname
 from typing import Dict, Union, List, Optional
+import logging
+
 import pandas as pd
 import click
-import logging
 
 from cpg_production_pipelines.pipeline import setup_batch
 from cpg_production_pipelines import utils
 from sample_metadata.parser.generic_parser import GenericParser, GroupedRow
-import hailtop.batch as hb
 
 
 logger = logging.getLogger(__file__)
@@ -29,19 +28,22 @@ PED_URL = (
     'ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/working/'
     '20121016_updated_pedigree/G1K_samples_20111130.ped'
 )
-SOURCE_BUCKET = (
-    'gs://fc-56ac46ea-efc4-4683-b6d5-6d95bed41c5e'
-)
+SOURCE_BUCKET = 'gs://fc-56ac46ea-efc4-4683-b6d5-6d95bed41c5e'
 
 
-class TGParser(GenericParser):
+class TGParser(GenericParser):  # pylint: disable=too-many-instance-attributes
+    """
+    Inherits from sample_metadata's GenericParser class and implements parsing logic specific
+    to thousand-genomes
+    """
+
     def __init__(
-        self, 
-        sample_to_copy_n: Optional[int], 
-        transfer_cram: bool, 
-        transfer_gvcf: bool, 
-        namespace: str, 
-        overwrite: bool, 
+        self,
+        sample_to_copy_n: Optional[int],
+        transfer_cram: bool,
+        transfer_gvcf: bool,
+        namespace: str,
+        overwrite: bool,
         sample_metadata_project: str,
         use_batch: bool,
     ):
@@ -56,8 +58,8 @@ class TGParser(GenericParser):
         self.tmp_dir = 'tmp'  # temporary dir for intemediate files
         if use_batch:
             self.batch = setup_batch(
-                title='Transfer 1KG data', 
-                keep_scratch=False, 
+                title='Transfer 1KG data',
+                keep_scratch=False,
                 tmp_bucket=f'cpg-{sample_metadata_project}-{namespace}-tmp',
                 analysis_project=sample_metadata_project,
             )
@@ -65,7 +67,7 @@ class TGParser(GenericParser):
             self.batch = None
         _call(f'mkdir -p {self.tmp_dir}')
         _call(f'mkdir -p {self.resources_dir}')
-    
+
     def get_sample_id(self, row: Dict[str, any]) -> str:
         return row['s']
 
@@ -101,18 +103,18 @@ class TGParser(GenericParser):
         ped_path = self._download_ped()
         src_gvcf_ls_path = self._save_bucket_ls(
             ext=['.raw.vcf.gz', '.raw.g.vcf.gz'],
-            source_bucket=f'{SOURCE_BUCKET}/**', 
+            source_bucket=f'{SOURCE_BUCKET}/**',
             label='source-gvcfs',
         )
         src_cram_ls_path = self._save_bucket_ls(
-            ext='.cram', 
-            source_bucket=f'{SOURCE_BUCKET}/**', 
-            label='source-crams', 
+            ext='.cram',
+            source_bucket=f'{SOURCE_BUCKET}/**',
+            label='source-crams',
         )
         output_path = join(self.tmp_dir, 'samples-raw.tsv')
         if can_reuse(output_path, self.overwrite):
             return output_path
-    
+
         ped_df = pd.read_csv(ped_path, sep='\t')
         print(f'Found {len(ped_df)} sample in PED')
         ped_row_by_sid = dict()
@@ -136,14 +138,17 @@ class TGParser(GenericParser):
                     source_cram_path = line.strip()
                     sid = source_cram_path.split('/')[-1].split('.')[0]
                     cram_by_sid[sid] = source_cram_path
-        assert len(gvcf_by_sid) == len(cram_by_sid), (len(gvcf_by_sid), len(cram_by_sid))
+        assert len(gvcf_by_sid) == len(cram_by_sid), (
+            len(gvcf_by_sid),
+            len(cram_by_sid),
+        )
         sids = gvcf_by_sid.keys()
         print(f'Found samples with GVCFs and CRAMs: {len(sids)}')
-        
+
         # Checking which samples have PED info
         sids = [sid for sid in sids if sid in ped_row_by_sid]
         print(f'Found samples with PED info: {len(sids)}')
-        
+
         # Parsing PED metadata
         ped_df = pd.read_csv(ped_path, sep='\t')
         print(f'Found {len(ped_df)} sample in PED')
@@ -151,11 +156,15 @@ class TGParser(GenericParser):
         for _, ped_row in ped_df.iterrows():
             s = ped_row['Individual.ID']
             ped_row_by_sid[s] = ped_row
-    
+
         entries = []
-        for i, sid in enumerate(sids):
-            entry = {'s': sid, 'raw_gvcf': gvcf_by_sid[sid], 'raw_cram': cram_by_sid[sid]}
-    
+        for sid in sids:
+            entry = {
+                's': sid,
+                'raw_gvcf': gvcf_by_sid[sid],
+                'raw_cram': cram_by_sid[sid],
+            }
+
             ped_row = ped_row_by_sid.get(sid)
             if ped_row is not None:
                 entry['continental_pop'] = ped_row['Population'].lower()
@@ -163,12 +172,12 @@ class TGParser(GenericParser):
                 entry['pat_id'] = ped_row['Paternal.ID']
                 entry['mat_id'] = ped_row['Maternal.ID']
                 entry['sex'] = ped_row['Gender']
-    
+
             entries.append(entry)
         df = pd.DataFrame(entries).set_index('s', drop=False)
         df.to_csv(output_path, sep='\t', index=False)
-        return output_path    
-        
+        return output_path
+
     def _download_ped(self) -> str:
         output_ped_path = join(self.resources_dir, 'samples.ped')
         if not can_reuse(output_ped_path):
@@ -176,10 +185,10 @@ class TGParser(GenericParser):
         return output_ped_path
 
     def _save_bucket_ls(
-        self, 
-        ext: Union[str, List[str]], 
-        source_bucket, 
-        label, 
+        self,
+        ext: Union[str, List[str]],
+        source_bucket,
+        label,
         dirpath=None,
     ) -> str:
         output_path = join(dirpath or self.tmp_dir, f'gs-ls-{label}.txt')
@@ -189,16 +198,18 @@ class TGParser(GenericParser):
             if isinstance(ext, str):
                 ext = [ext]
             for e in ext:
-                _call(f'gsutil -u {self.sample_metadata_project} ls "{source_bucket}/*{e}" >> {output_path}')
-        return output_path    
+                _call(
+                    f'gsutil -u {self.sample_metadata_project} ls "{source_bucket}/*{e}" >> {output_path}'
+                )
+        return output_path
 
     def _transfer_for_type(self, df, atype: str) -> pd.DataFrame:  # gvcf, cram
         print(f'{atype}: transferring files')
-       
+
         transferred_files_path = self._save_bucket_ls(
-            ext='.g.vcf.gz' if atype == 'gvcf' else '.cram', 
-            source_bucket=f'{self.target_bucket}/{atype}/raw', 
-            label=f'target-{atype}s', 
+            ext='.g.vcf.gz' if atype == 'gvcf' else '.cram',
+            source_bucket=f'{self.target_bucket}/{atype}/raw',
+            label=f'target-{atype}s',
         )
 
         # Checking what we have already uploaded
@@ -215,16 +226,22 @@ class TGParser(GenericParser):
         if found_files_by_sid:
             samples_n = samples_n - len(found_files_by_sid)
             if samples_n <= 0:
-                print(f'{atype}: Found files for {len(found_files_by_sid)} samples, no need to copy more')
+                print(
+                    f'{atype}: Found files for {len(found_files_by_sid)} samples, no need to copy more'
+                )
                 sids_to_copy = []
             else:
                 sids_to_copy = [sid for sid in df.s if sid not in found_files_by_sid]
-                print(f'{atype}: Copying {samples_n} more samples from {len(sids_to_copy)} remaining samples')
+                print(
+                    f'{atype}: Copying {samples_n} more samples from {len(sids_to_copy)} remaining samples'
+                )
                 sids_to_copy = list(sids_to_copy)[:samples_n]
         else:
             sids_to_copy = df.s
             sids_to_copy = list(sids_to_copy)[:samples_n]
-            print(f'{atype}: Copying {samples_n} samples from {len(sids_to_copy)} samples')            
+            print(
+                f'{atype}: Copying {samples_n} samples from {len(sids_to_copy)} samples'
+            )
 
         print(f'{atype}: Setting found files to {len(found_files_by_sid)} samples')
         for sid, path in found_files_by_sid.items():
@@ -232,18 +249,21 @@ class TGParser(GenericParser):
 
         df_to_copy = df.loc[df.s.isin(sids_to_copy)]
         print(f'{atype}: Copying files for {len(df_to_copy)} more samples')
-        
+
         src_file_list = join(self.tmp_dir, f'{atype}-src-files.txt')
         trg_bucket = f'{self.target_bucket}/{atype}'
         with open(src_file_list, 'w') as f:
-            for i, (sid, src_path) in enumerate(zip(df_to_copy.s, df_to_copy[f'raw_{atype}'])):
+            for sid, src_path in zip(df_to_copy.s, df_to_copy[f'raw_{atype}']):
                 ind_ext = '.tbi' if atype == 'gvcf' else '.crai'
-                f.writelines(l + '\n' for l in [
-                    src_path,
-                    src_path + ind_ext,
-                    _get_md5_path(src_path),
-                    _get_md5_path(src_path + ind_ext),
-                ])
+                f.writelines(
+                    line + '\n'
+                    for line in [
+                        src_path,
+                        src_path + ind_ext,
+                        _get_md5_path(src_path),
+                        _get_md5_path(src_path + ind_ext),
+                    ]
+                )
                 df.loc[sid, [atype]] = join(trg_bucket, basename(src_path))
 
         if self.batch:
@@ -258,13 +278,15 @@ class TGParser(GenericParser):
             j.cpu(32)
             j.image('australia-southeast1-docker.pkg.dev/cpg-common/images/aspera:v1')
             j.command('export GOOGLE_APPLICATION_CREDENTIALS=/gsa-key/key.json')
-            j.command('gcloud -q auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS')
+            j.command(
+                'gcloud -q auth activate-service-account --key-file=$GOOGLE_APPLICATION_CREDENTIALS'
+            )
             j.command(cmd)
 
         df = df[df[atype] != '-']
         df = df.drop(columns=[f'raw_{atype}'])
         return df
-                
+
     def transfer(self, tsv_path, dry_run: bool) -> str:
         """
         Takes a metadata TSV file prepared on a `parse` step, that contains paths
@@ -279,7 +301,7 @@ class TGParser(GenericParser):
         # Fields that will correspond to uploaded files:
         df['gvcf'] = '-'
         df['cram'] = '-'
-        
+
         if self.transfer_gvcf:
             df = self._transfer_for_type(df, 'gvcf')
         if self.transfer_cram:
@@ -290,12 +312,12 @@ class TGParser(GenericParser):
 
         df.to_csv(output_path, sep='\t', index=False)
         return output_path
-    
+
     # def _transfer_sample(self, atype, sid, src_path) -> str:
     #     ext = '.g.vcf.gz' if atype == 'gvcf' else '.cram'
     #     ind_ext = '.tbi' if atype == 'gvcf' else '.crai'
     #     trg_path = f'{self.target_bucket}/{atype}/raw/{sid}{ext}'
-    # 
+    #
     #     cmds = [
     #         self._transfer_file_cmd(src_path, trg_path),
     #         self._transfer_file_cmd(src_path + ind_ext, trg_path + ind_ext),
@@ -312,9 +334,9 @@ class TGParser(GenericParser):
     #     else:
     #         for cmd in cmds:
     #             _call(cmd)
-    # 
+    #
     #     return trg_path
-    # 
+    #
     # def _transfer_file_cmd(self, src_path, trg_path):
     #     return f'gsutil ls {trg_path} || gsutil -u {self.sample_metadata_project} cp {src_path} {trg_path}'
 
@@ -349,10 +371,7 @@ def _get_md5_path(fpath):
     help='Dry run',
 )
 @click.option(
-    '--namespace',
-    'namespace',
-    type=click.Choice(['test', 'main']),
-    help='main or test'
+    '--namespace', 'namespace', type=click.Choice(['test', 'main']), help='main or test'
 )
 @click.option(
     '--project',
@@ -369,7 +388,7 @@ def _get_md5_path(fpath):
     'use_batch',
     is_flag=True,
 )
-def main(
+def main(  # pylint: disable=too-many-arguments,too-many-locals,too-many-statements,missing-function-docstring
     sample_to_copy_n: Optional[int],
     transfer_gvcf: bool,
     transfer_cram: bool,
@@ -389,9 +408,9 @@ def main(
         use_batch=use_batch,
     )
     tsv_path = parser.find_files()
-    
+
     tsv_path = parser.transfer(tsv_path, dry_run=dry_run)
-    
+
     # with open(tsv_path) as f:
     #     parser.parse_manifest(f, delimiter='\t', dry_run=dry_run)
 
@@ -423,10 +442,9 @@ def can_reuse(
         if not silent:
             logger.info(f'File {fpath} exists and will be overwritten')
         return False
-    else:
-        if not silent:
-            logger.info(f'Reusing existing {fpath}. Use --overwrite to overwrite')
-        return True
+    if not silent:
+        logger.info(f'Reusing existing {fpath}. Use --overwrite to overwrite')
+    return True
 
 
 if __name__ == '__main__':

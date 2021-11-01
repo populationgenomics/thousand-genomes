@@ -129,5 +129,5 @@ dmypy.json
 .pyre/
 .idea/
 
-resources
-tmp
+ingest/tmp
+ingest/resources
